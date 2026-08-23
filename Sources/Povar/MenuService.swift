@@ -65,6 +65,7 @@ func sendMenu(
             [TelegramKeyboardButton(text: "Мой адрес")],
             [TelegramKeyboardButton(text: "Мой телефон")],
             [TelegramKeyboardButton(text: "Реферальная программа")],
+            [TelegramKeyboardButton(text: "🔔 Уведомления")],
             [TelegramKeyboardButton(text: "Сменить роль")]
         ]
     case .cook:
@@ -83,6 +84,7 @@ func sendMenu(
             [TelegramKeyboardButton(text: "Мой адрес")],
             [TelegramKeyboardButton(text: "📍 Моя кухня", requestLocation: true)],
             [TelegramKeyboardButton(text: ordersLabel)],
+            [TelegramKeyboardButton(text: "🔔 Уведомления")],
             [TelegramKeyboardButton(text: "Сменить роль")]
         ]
     }
@@ -418,6 +420,15 @@ func handleTextMenuShortcut(
                 text: "Введите ваш \(roleHint) (например: г. Москва, ул. Ленина, 5)\(currentLine)\nОтправьте '-' чтобы убрать.",
                 replyMarkup: nil
             ),
+            logger: logger
+        )
+
+    case "🔔 Уведомления":
+        try await sendNotificationSettings(
+            telegramUserID: telegramUserID,
+            chatID: chatID,
+            req: req,
+            client: client,
             logger: logger
         )
 

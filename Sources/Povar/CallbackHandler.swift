@@ -1224,6 +1224,50 @@ func handleCallbackQuery(
             try await answerToast("Неизвестное действие", callbackQueryID: callbackQuery.id, client: client, logger: logger)
         }
 
+    // MARK: - Настройки уведомлений (вкл/выкл, тихие часы)
+    case "notif":
+        guard parts.count >= 2 else {
+            try await answerToast("Неизвестное действие", callbackQueryID: callbackQuery.id, client: client, logger: logger)
+            return
+        }
+        switch parts[1] {
+        case "toggle":
+            try await handleNotificationToggleCallback(
+                telegramUserID: telegramUserID,
+                chatID: chatID,
+                callbackQueryID: callbackQuery.id,
+                req: req,
+                client: client,
+                logger: logger
+            )
+        case "quiet":
+            guard parts.count == 4 else {
+                try await answerToast("Неизвестное действие", callbackQueryID: callbackQuery.id, client: client, logger: logger)
+                return
+            }
+            try await handleNotificationQuietHoursCallback(
+                telegramUserID: telegramUserID,
+                chatID: chatID,
+                callbackQueryID: callbackQuery.id,
+                startString: parts[2],
+                endString: parts[3],
+                req: req,
+                client: client,
+                logger: logger
+            )
+        case "quiet_off":
+            try await handleNotificationQuietHoursOffCallback(
+                telegramUserID: telegramUserID,
+                chatID: chatID,
+                callbackQueryID: callbackQuery.id,
+                req: req,
+                client: client,
+                logger: logger
+            )
+        default:
+            try await answerToast("Неизвестное действие", callbackQueryID: callbackQuery.id, client: client, logger: logger)
+        }
+
     default:
         try await answerToast("Неизвестное действие", callbackQueryID: callbackQuery.id, client: client, logger: logger)
     }

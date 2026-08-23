@@ -78,6 +78,15 @@ final class User: Model, Content, @unchecked Sendable {
     @OptionalField(key: "search_dish_type")
     var searchDishType: String?
 
+    @OptionalField(key: "notifications_enabled")
+    var notificationsEnabled: Bool?
+
+    @OptionalField(key: "quiet_hours_start")
+    var quietHoursStart: Int?
+
+    @OptionalField(key: "quiet_hours_end")
+    var quietHoursEnd: Int?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 

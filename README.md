@@ -58,9 +58,12 @@ Implemented flow:
 - Client can open `Мои заказы` and see current statuses.
 - Client can cancel active order from `Мои заказы`.
 - Main role menu is shown as Telegram reply keyboard (bottom buttons).
+- Nearby search uses geolocation with a 10 km radius and keyword/price/type filters.
+- Notification preferences: users can mute proactive pushes (new dish from
+  a followed cook) and set quiet hours from `🔔 Уведомления`. Order-status
+  updates are always delivered regardless of quiet hours.
 
 ## Next implementation steps
 
-1. Add order details screen and confirm/cancel from client side.
-2. Add geolocation and nearby filtering.
-3. Add notifications preferences and quiet hours.
+1. Quiet hours currently use the server's local time, not the user's own
+   timezone — add per-user timezone if the audience spans multiple regions.

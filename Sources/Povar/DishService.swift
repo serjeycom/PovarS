@@ -497,9 +497,11 @@ func notifySubscribersOfCook(
     let portionsLine = portions.map { ", осталось \($0) порций" } ?? ""
     let text = "🔥 \(cook.firstName) готовит сегодня: «\(dish.title)»\(portionsLine)"
     for subscription in subscriptions {
-        guard let clientTelegramID = try await findTelegramIDForUser(subscription.$client.id, on: req.db) else {
+        guard let subscriber = try await User.find(subscription.$client.id, on: req.db),
+              NotificationPreferenceService.shouldSendProactiveNotification(to: subscriber) else {
             continue
         }
+        let clientTelegramID = subscriber.telegramID
         try await client.sendMessage(
             TelegramSendMessageRequest(chatID: clientTelegramID, text: text, replyMarkup: nil),
             logger: logger

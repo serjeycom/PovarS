@@ -41,6 +41,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddOrderBalanceAndVoiceAndPromo())
     app.migrations.add(AddDraftVoiceToConversationState())
     app.migrations.add(CreatePromoCode())
+    app.migrations.add(AddNotificationPreferences())
 
     if let botToken = Environment.get("TELEGRAM_BOT_TOKEN"), !botToken.isEmpty {
         let client = TelegramBotClient(app: app, botToken: botToken)
