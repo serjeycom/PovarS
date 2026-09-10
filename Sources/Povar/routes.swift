@@ -2,9 +2,22 @@ import Fluent
 import Vapor
 
 func routes(_ app: Application) throws {
-    app.get { _ async in
-        ["status": "ok", "service": "povar-bot-api"]
+    // Лендинга больше нет: корень сразу открывает каталог (/app).
+    // nginx отдаёт Mini App прямо на /, а здесь — редирект для прямых запросов.
+    app.get { req async throws -> Response in
+        return req.redirect(to: "/app", redirectType: .normal)
     }
+
+    app.get("health") { req async throws -> [String: String] in
+        ["ok": "true"]
+    }
+
+    // Mini App: статика и API
+    let miniApp = MiniAppController(app: app)
+    miniApp.boot()
+
+    // Admin panel
+    try app.register(collection: AdminController())
 
     app.post("telegram", "webhook") { req async throws -> HTTPStatus in
         try await handleTelegramWebhook(req)

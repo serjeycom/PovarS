@@ -15,13 +15,12 @@ func priceToStars(_ price: Double) -> Int {
 // MARK: - Отправка инвойса оплаты (Stars)
 func sendPaymentInvoice(
     order: Order,
-    dish: Dish,
+    title: String,
     chatID: Int64,
     client: TelegramBotClient,
     logger: Logger
 ) async throws {
     let stars = priceToStars(order.totalPrice)
-    let title = "Заказ «\(dish.title)»"
     let description = "Оплата заказа звёздами. При получении можно заплатить наличными."
     try await client.sendInvoice(
         TelegramSendInvoiceRequest(
@@ -31,8 +30,25 @@ func sendPaymentInvoice(
             payload: order.id?.uuidString ?? "",
             providerToken: "",
             currency: "XTR",
-            prices: [TelegramLabeledPrice(label: dish.title, amount: stars)]
+            prices: [TelegramLabeledPrice(label: title, amount: stars)]
         ),
+        logger: logger
+    )
+}
+
+/// Инвойс для заказа из Mini App.
+func sendOrderInvoice(
+    order: Order,
+    title: String,
+    chatID: Int64,
+    client: TelegramBotClient,
+    logger: Logger
+) async throws {
+    try await sendPaymentInvoice(
+        order: order,
+        title: title,
+        chatID: chatID,
+        client: client,
         logger: logger
     )
 }
@@ -106,7 +122,7 @@ func handleSuccessfulPayment(
     guard let cookTelegramID = try await findTelegramIDForUser(order.$cook.id, on: req.db) else {
         return
     }
-    let title = order.dish?.title ?? "Блюдо"
+    let title = (try? await order.$dish.get(on: req.db))?.title ?? "Блюдо"
     try await client.sendMessage(
         TelegramSendMessageRequest(
             chatID: cookTelegramID,

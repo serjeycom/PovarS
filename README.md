@@ -1,6 +1,19 @@
 # Povar
 
-Telegram bot backend on Swift Vapor for connecting home cooks and clients.
+Сервис домашней еды: платформа на Swift Vapor, связывающая домашних поваров и клиентов.
+
+## Архитектура
+
+- **Mini App** (`/app`) — основная точка взаимодействия: каталог блюд, поиск и
+  фильтры, корзина, заказы, избранное, профиль, поварской раздел
+  (блюда, заказы со сменой статусов, промокоды, статистика), настройки
+  уведомлений.
+- **Telegram-бот** (`/telegram/webhook` или long-polling) — работает только как
+  канал уведомлений: новые заказы повару, смена статуса заказа клиенту,
+  новые блюда у поваров, на которые подписан клиент, лист ожидания,
+  оплата звёздами и напоминания. Вся интерактивность — в Mini App.
+- **Лендинг** (`/`) — вход через Telegram Login Widget.
+- **Админ-панель** (`/admin`) — доступ по токену `ADMIN_TOKEN`.
 
 ## Run locally
 
@@ -10,60 +23,71 @@ swift run Povar migrate
 swift run
 ```
 
-Server starts on `http://127.0.0.1:8080` by default.
+Сервер стартует на `http://127.0.0.1:8080` по умолчанию.
 
 ## Environment variables
 
-- `DATABASE_URL` - optional PostgreSQL connection string.
-- `TELEGRAM_BOT_TOKEN` - required token from @BotFather.
-- `TELEGRAM_WEBHOOK_SECRET` - optional secret for webhook URL validation.
+- `DATABASE_URL` — опциональная строка подключения PostgreSQL (по умолчанию SQLite `povar.sqlite`).
+- `TELEGRAM_BOT_TOKEN` — обязательный токен от @BotFather.
+- `TELEGRAM_WEBHOOK_SECRET` — опциональный секрет для валидации webhook-URL.
+- `ADMIN_TOKEN` — обязательный токен для админ-панели (`/admin`).
+- `MINI_APP_URL` — публичный URL Mini App для кнопки «Открыть каталог» в боте.
+- `BOT_USERNAME` — ник бота для ссылок `t.me/<bot>`.
 
 ## Webhook endpoint
 
-`POST /telegram/webhook`
+`POST /telegram/webhook` или `POST /telegram/webhook/:secret`
 
-or
+Если `TELEGRAM_WEBHOOK_SECRET` задан, запрос должен идти на
+`/telegram/webhook/:secret`, и `:secret` должен совпадать с этим значением.
 
-`POST /telegram/webhook/:secret`
-
-If `TELEGRAM_WEBHOOK_SECRET` is set, request must be sent to
-`/telegram/webhook/:secret` and `:secret` must match this value.
-
-Example Telegram webhook URL:
-
-`https://your-domain.com/telegram/webhook/<secret>`
-
-## Configure webhook in Telegram
+Пример настройки webhook:
 
 ```bash
 curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
   -d "url=https://your-domain.com/telegram/webhook/<secret>"
 ```
 
-After this, send `/start` to the bot. It will show role buttons:
-- `Я клиент`
-- `Я повар`
+## Bot
 
-Current commands:
-- `/start` - role selection
-- `/menu` - role-specific menu (client/cook)
-- `/cancel` - cancel current input scenario (for example, add dish flow)
+Бот — это только чат сообщений, уведомлений и рекламы. Он отвечает на
+`/start` и `/menu` кнопкой «Открыть каталог», принимает реферальные ссылки
+`/start CODE`, а в остальном отправляет:
 
-Implemented flow:
-- Cook can add a dish from menu: `Добавить блюдо`.
-- Bot asks for title -> description -> price and saves to DB.
-- Client can open `Найти блюда рядом` and see latest dishes.
-- Client can create an order from dish card (`Заказать`) with confirmation step.
-- Cook can open `Заказы повара` and move order status.
-- Client can open `Мои заказы` and see current statuses.
-- Client can cancel active order from `Мои заказы`.
-- Main role menu is shown as Telegram reply keyboard (bottom buttons).
-- Nearby search uses geolocation with a 10 km radius and keyword/price/type filters.
-- Notification preferences: users can mute proactive pushes (new dish from
-  a followed cook) and set quiet hours from `🔔 Уведомления`. Order-status
-  updates are always delivered regardless of quiet hours.
+- **сообщения**: инвойсы оплаты звёздами, подтверждения;
+- **уведомления**: повару — новый заказ, отмена, оплата, лист ожидания;
+  клиенту — смена статуса заказа, напоминание о готовом заказе,
+  «повар готовит сегодня», пополнение блюда из листа ожидания;
+- **рекламу**: рассылки из админ-панели (`/admin` → «Рассылка»),
+  с учётом настроек уведомлений и тихих часов пользователей.
+
+Тихие часы и отключение уведомлений настраиваются в Mini App
+(профиль → 🔔 Уведомления) и учитывают часовой пояс пользователя
+(определяется автоматически на клиенте). Статусы заказов приходят всегда.
+
+## Mini App API
+
+Основные группы `/api/v1`:
+
+- `GET /browse?q=&category=&maxPrice=&city=&sort=&todayOnly=&photoOnly=&page=` — каталог
+- `GET /cities` — города поваров
+- `GET /api/v1/uploads/:fileId` — прокси фото из Telegram (с кэшем URL)
+- `GET|PUT /me`, `POST /me/photo` (аватар), `GET|PUT /notification-settings`, `PUT /location`
+- `GET|POST /dishes`, `GET|PUT|DELETE /dishes/:id`,
+  `POST /dishes/:id/today|untoday|toggle|photo|waitlist`, `GET /my-dishes`
+- `GET|POST /cart`, `PUT|DELETE /cart/:id`
+- `GET|POST /orders`, `POST /orders/:id/cancel|status|rate`, `GET /cook-orders`
+- `GET|POST /favorites`, `POST /favorites/:id`
+- `GET /cook/:id`, `POST /cook/:id/subscribe|unsubscribe`
+- `GET|POST /promos`, `POST /promos/:id/toggle`, `GET /cook-stats`
+
+Админ-API (`/api/v1/admin/*`, токен `ADMIN_TOKEN`): статистика, пользователи,
+блюда, заказы, `POST /broadcast` — рекламная рассылка в чат бота.
+
+Авторизация — `X-Telegram-Init-Data` (Mini App) или сессия (`/auth/telegram` для сайта).
 
 ## Next implementation steps
 
-1. Quiet hours currently use the server's local time, not the user's own
-   timezone — add per-user timezone if the audience spans multiple regions.
+1. Частичная предоплата звёздами (сейчас инвойс на полную сумму, наличные — опция при получении).
+2. Расширенная реклама: картинки/кнопки в рассылке, авто-промо новых блюд.
+3. Мультиязычность интерфейса (сейчас только русский).

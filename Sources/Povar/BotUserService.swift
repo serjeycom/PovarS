@@ -54,7 +54,7 @@ struct BotUserService {
         reason: String,
         on db: Database
     ) async throws {
-        guard amount > 0, var user = try await User.find(userID, on: db) else { return }
+        guard amount > 0, let user = try await User.find(userID, on: db) else { return }
         let current = user.balance ?? 0
         user.balance = current + amount
         try await user.save(on: db)
@@ -65,7 +65,7 @@ struct BotUserService {
         amount: Int,
         on db: Database
     ) async throws -> Bool {
-        guard var user = try await User.find(userID, on: db) else { return false }
+        guard let user = try await User.find(userID, on: db) else { return false }
         let current = user.balance ?? 0
         guard current >= amount else { return false }
         user.balance = current - amount

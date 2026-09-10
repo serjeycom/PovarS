@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Повар — Админ-панель</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --bg-2: #1e293b;
+            --surface: #1e293b;
+            --surface-2: #334155;
+            --border: #334155;
+            --text: #e2e8f0;
+            --text-2: #94a3b8;
+            --text-3: #64748b;
+            --brand: #ff6b35;
+            --brand-2: #ff8555;
+            --blue: #2563eb;
+            --indigo: #6366f1;
+            --sky: #0ea5e9;
+            --green: #22c55e;
+            --yellow: #eab308;
+            --emerald: #10b981;
+            --red: #ef4444;
+            --purple: #8b5cf6;
+            --rose: #f43f5e;
+            --radius: 8px;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); }
+
+        .container { max-width:1100px; margin:0 auto; padding:24px 16px; }
+
+        /* Header */
+        .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+        .header h1 { font-size:20px; font-weight:700; }
+        .header h1 span { color:var(--brand); }
+        .header-actions { display:flex; gap:8px; }
+
+        /* Stat cards */
+        .stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
+        .stat { background:var(--surface); padding:14px 16px; border-radius:var(--radius); border-left:4px solid var(--blue); }
+        .stat .label { font-size:11px; color:var(--text-3); text-transform:uppercase; font-weight:600; letter-spacing:0.5px; }
+        .stat .value { font-size:28px; font-weight:800; margin-top:2px; }
+        .stat.blue { border-color:var(--blue); }
+        .stat.indigo { border-color:var(--indigo); }
+        .stat.sky { border-color:var(--sky); }
+        .stat.green { border-color:var(--green); }
+        .stat.yellow { border-color:var(--yellow); }
+        .stat.emerald { border-color:var(--emerald); }
+        .stat.red { border-color:var(--red); }
+        .stat.purple { border-color:var(--purple); }
+        .stat.rose { border-color:var(--rose); }
+
+        /* Subtabs */
+        .subtabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:20px; }
+        .subtab { padding:10px 20px; font-size:14px; font-weight:600; color:var(--text-3); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
+        .subtab:hover { color:var(--text-2); }
+        .subtab.active { color:var(--brand); border-bottom-color:var(--brand); }
+        .tab-panel { display:none; }
+        .tab-panel.active { display:block; }
+
+        /* Filters */
+        .filters { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+        .filters select, .filters input { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:7px 12px; color:var(--text); font-size:13px; outline:none; font-family:inherit; }
+        .filters select:focus, .filters input:focus { border-color:var(--brand); }
+        .filters input { width:220px; }
+
+        /* Table */
+        .table-wrap { background:var(--surface); border-radius:var(--radius); overflow:hidden; }
+        .table { width:100%; border-collapse:collapse; font-size:13px; }
+        .table th { color:var(--text-3); font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:0.5px; padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); }
+        .table td { padding:9px 14px; border-bottom:1px solid var(--border); }
+        .table tr:last-child td { border-bottom:none; }
+        .table tr:hover td { background:rgba(255,107,53,0.04); }
+        .table .id { color:var(--text-3); font-family:monospace; font-size:12px; }
+
+        /* Status pills */
+        .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+        .pill-new { background:rgba(34,197,94,0.15); color:#22c55e; }
+        .pill-accepted { background:rgba(37,99,235,0.15); color:#2563eb; }
+        .pill-cooking { background:rgba(234,179,8,0.15); color:#eab308; }
+        .pill-ready { background:rgba(16,185,129,0.15); color:#10b981; }
+        .pill-on_the_way, .pill-onTheWay { background:rgba(14,165,233,0.15); color:#0ea5e9; }
+        .pill-delivered { background:rgba(16,185,129,0.2); color:#10b981; }
+        .pill-cancelled { background:rgba(100,116,139,0.2); color:#94a3b8; }
+        .pill-cook { background:rgba(139,92,246,0.15); color:#8b5cf6; }
+        .pill-client { background:rgba(37,99,235,0.15); color:#2563eb; }
+        .pill-active { color:#22c55e; }
+        .pill-inactive { color:#ef4444; }
+        .pill-verified { color:#8b5cf6; }
+        .pill-banned { color:#ef4444; }
+
+        /* Buttons */
+        .btn { padding:6px 12px; border-radius:var(--radius); font-size:12px; font-weight:600; border:none; cursor:pointer; transition:all .12s; font-family:inherit; }
+        .btn-primary { background:var(--brand); color:white; }
+        .btn-primary:hover { background:var(--brand-2); }
+        .btn-secondary { background:var(--surface-2); color:var(--text); }
+        .btn-danger { background:#b91c1c; color:white; }
+        .btn-success { background:var(--green); color:white; }
+        .btn-sm { padding:3px 8px; font-size:11px; }
+        .btn-ghost { background:none; color:var(--text-3); border:1px solid var(--border); }
+        .btn-ghost:hover { color:var(--text); border-color:var(--text-3); }
+
+        /* Stars */
+        .stars { color:var(--yellow); }
+
+        /* Loading */
+        .loading { text-align:center; padding:40px; color:var(--text-3); }
+        .spinner { width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--brand); border-radius:50%; animation:spin .6s linear infinite; margin:0 auto 10px; }
+        @keyframes spin { to { transform:rotate(360deg) } }
+
+        .empty { text-align:center; padding:48px 20px; color:var(--text-3); }
+        .empty-icon { font-size:40px; margin-bottom:8px; }
+
+        /* Modal */
+        .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+        .modal-overlay.open { display:flex; }
+        .modal { background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:24px; width:90%; max-width:480px; max-height:85vh; overflow-y:auto; }
+        .modal h3 { font-size:16px; margin-bottom:14px; }
+        .modal label { display:block; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; margin-bottom:3px; margin-top:10px; }
+        .modal input, .modal select, .modal textarea { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:7px 10px; color:var(--text); font-size:13px; outline:none; font-family:inherit; }
+        .modal input:focus, .modal select:focus { border-color:var(--brand); }
+        .modal textarea { min-height:50px; resize:vertical; }
+        .modal-actions { display:flex; gap:8px; margin-top:16px; justify-content:flex-end; }
+
+        /* Toast */
+        .toast { position:fixed; bottom:20px; right:20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px 16px; font-size:13px; z-index:2000; animation:slideUp .3s ease; }
+        .toast.success { border-color:var(--green); color:var(--green); }
+        .toast.error { border-color:var(--red); color:var(--red); }
+        @keyframes slideUp { from { transform:translateY(16px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+
+        @media(max-width:768px) {
+            .stats { grid-template-columns:repeat(2,1fr); }
+            .table-wrap { overflow-x:auto; }
+            .filters input { width:100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span>Повар</span> — Админ</h1>
+            <div class="header-actions">
+                <button class="btn btn-primary" id="seedBtn">🌱 Seed</button>
+                <button class="btn btn-ghost" id="refreshBtn">🔄</button>
+                <button class="btn btn-ghost" id="tokenBtn" title="Сменить токен">🔑</button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats" id="statsGrid"><div class="loading"><div class="spinner"></div></div></div>
+
+        <!-- Subtabs -->
+        <div class="subtabs">
+            <div class="subtab active" data-tab="aorders">Заказы</div>
+            <div class="subtab" data-tab="ausers">Пользователи</div>
+            <div class="subtab" data-tab="adishes">Блюда</div>
+            <div class="subtab" data-tab="abroadcast">📣 Рассылка</div>
+        </div>
+
+        <!-- Broadcast -->
+        <div class="tab-panel" id="tabAbroadcast">
+            <div style="background:var(--surface);border-radius:var(--radius);padding:16px;max-width:640px">
+                <h3 style="font-size:15px;margin-bottom:10px">📣 Рекламная рассылка в чат бота</h3>
+                <p style="font-size:12px;color:var(--text-3);margin-bottom:12px">
+                    Сообщение придёт пользователям в чат с ботом. Учитываются их настройки уведомлений и тихие часы.
+                </p>
+                <label style="display:block;font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;margin-bottom:4px">Текст сообщения</label>
+                <textarea id="bcText" rows="5" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;color:var(--text);font-family:inherit;resize:vertical" placeholder="Например: 🔥 Сегодня у поваров новый борщ! Откройте каталог."></textarea>
+                <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+                    <select id="bcAudience" style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:7px 12px;color:var(--text)">
+                        <option value="all">Всем пользователям</option>
+                        <option value="clients">Только клиентам</option>
+                        <option value="cooks">Только поварам</option>
+                    </select>
+                    <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--text-2)">
+                        <input type="checkbox" id="bcQuiet" checked> Учитывать тихие часы
+                    </label>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:14px">
+                    <button class="btn btn-primary" id="bcSend">Отправить</button>
+                    <span id="bcStatus" style="font-size:12px;color:var(--text-3);align-self:center"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders -->
+        <div class="tab-panel active" id="tabAorders">
+            <div class="filters">
+                <select id="orderStatusFilter">
+                    <option value="">Все статусы</option>
+                    <option value="new">Новый</option>
+                    <option value="accepted">Принят</option>
+                    <option value="cooking">Готовится</option>
+                    <option value="ready">Готов</option>
+                    <option value="delivered">Доставлен</option>
+                    <option value="cancelled">Отменён</option>
+                </select>
+                <input type="text" id="orderSearch" placeholder="Поиск по блюду, клиенту...">
+            </div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>ID</th><th>Блюдо</th><th>Клиент</th><th>Повар</th><th>Сумма</th><th>Статус</th><th>Отзыв</th><th>Действия</th></tr></thead>
+                    <tbody id="ordersBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Users -->
+        <div class="tab-panel" id="tabAusers">
+            <div class="filters">
+                <input type="text" id="userSearch" placeholder="Поиск по имени, городу, @username...">
+                <select id="userRoleFilter">
+                    <option value="">Все роли</option>
+                    <option value="cook">Повара</option>
+                    <option value="client">Клиенты</option>
+                </select>
+            </div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>ID</th><th>Имя</th><th>Роль</th><th>Город</th><th>Баланс</th><th>Дата</th><th>Действия</th></tr></thead>
+                    <tbody id="usersBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Dishes -->
+        <div class="tab-panel" id="tabAdishes">
+            <div class="filters">
+                <input type="text" id="dishSearch" placeholder="Поиск по названию, повару...">
+                <select id="dishTypeFilter">
+                    <option value="">Все категории</option>
+                    <option value="breakfast">Завтрак</option>
+                    <option value="lunch">Обед</option>
+                    <option value="dinner">Ужин</option>
+                    <option value="dessert">Десерт</option>
+                    <option value="drink">Напиток</option>
+                </select>
+            </div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Название</th><th>Повар</th><th>Цена</th><th>Категория</th><th>Порции</th><th>Статус</th><th>Действия</th></tr></thead>
+                    <tbody id="dishesBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal-overlay" id="editUserModal">
+        <div class="modal">
+            <h3>Редактировать пользователя</h3>
+            <input type="hidden" id="editUserId">
+            <label>Имя</label><input type="text" id="editUserFirstName">
+            <label>Фамилия</label><input type="text" id="editUserLastName">
+            <label>Телефон</label><input type="text" id="editUserPhone">
+            <label>Роль</label><select id="editUserRole"><option value="client">Клиент</option><option value="cook">Повар</option></select>
+            <label>Город</label><input type="text" id="editUserCity">
+            <label>Био</label><textarea id="editUserBio"></textarea>
+            <label>Специализация</label><input type="text" id="editUserSpec">
+            <label>Адрес</label><input type="text" id="editUserAddress">
+            <label>Баланс</label><input type="number" id="editUserBalance">
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeModal('editUserModal')">Отмена</button>
+                <button class="btn btn-primary" id="saveUserBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Dish Modal -->
+    <div class="modal-overlay" id="editDishModal">
+        <div class="modal">
+            <h3>Редактировать блюдо</h3>
+            <input type="hidden" id="editDishId">
+            <label>Название</label><input type="text" id="editDishTitle">
+            <label>Описание</label><textarea id="editDishDetails"></textarea>
+            <label>Цена (₽)</label><input type="number" id="editDishPrice">
+            <label>Категория</label>
+            <select id="editDishType"><option value="breakfast">Завтрак</option><option value="lunch">Обед</option><option value="dinner">Ужин</option><option value="dessert">Десерт</option><option value="drink">Напиток</option></select>
+            <label>Всего порций</label><input type="number" id="editDishPortions">
+            <label>Осталось порций</label><input type="number" id="editDishPortionsLeft">
+            <label>Активно</label><select id="editDishActive"><option value="true">Да</option><option value="false">Нет</option></select>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeModal('editDishModal')">Отмена</button>
+                <button class="btn btn-primary" id="saveDishBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Order Modal -->
+    <div class="modal-overlay" id="editOrderModal">
+        <div class="modal">
+            <h3>Редактировать заказ</h3>
+            <input type="hidden" id="editOrderId">
+            <label>Статус</label>
+            <select id="editOrderStatus"><option value="new">Новый</option><option value="accepted">Принят</option><option value="cooking">Готовится</option><option value="ready">Готов</option><option value="on_the_way">В пути</option><option value="delivered">Доставлен</option><option value="cancelled">Отменён</option></select>
+            <label>Комментарий</label><textarea id="editOrderComment"></textarea>
+            <label>Оценка</label><input type="number" id="editOrderRating" min="1" max="5">
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeModal('editOrderModal')">Отмена</button>
+                <button class="btn btn-primary" id="saveOrderBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/admin/admin.js"></script>
+</body>
+</html>

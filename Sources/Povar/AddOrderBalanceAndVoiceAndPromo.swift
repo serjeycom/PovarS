@@ -3,7 +3,7 @@ import Fluent
 struct AddOrderBalanceAndVoiceAndPromo: AsyncMigration {
     func prepare(on database: Database) async throws {
         try await database.schema(Order.schema)
-            .field("balance_used", .int, .sql(raw: "DEFAULT 0"))
+            .field("balance_used", .int, .sql(unsafeRaw: "DEFAULT 0"))
             .update()
         try await database.schema(Order.schema)
             .field("voice_note", .string)

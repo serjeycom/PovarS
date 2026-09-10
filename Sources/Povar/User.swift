@@ -87,6 +87,24 @@ final class User: Model, Content, @unchecked Sendable {
     @OptionalField(key: "quiet_hours_end")
     var quietHoursEnd: Int?
 
+    @OptionalField(key: "city")
+    var city: String?
+
+    @OptionalField(key: "bio")
+    var bio: String?
+
+    @OptionalField(key: "specialization")
+    var specialization: String?
+
+    @OptionalField(key: "profile_photo_file_id")
+    var profilePhotoFileID: String?
+
+    @OptionalField(key: "profile_photo_path")
+    var profilePhotoPath: String?
+
+    @OptionalField(key: "utc_offset_minutes")
+    var utcOffsetMinutes: Int?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 

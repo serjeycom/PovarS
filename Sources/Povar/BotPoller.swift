@@ -77,19 +77,12 @@ final class BotPoller: @unchecked Sendable, LifecycleHandler {
                     guard let clientTelegramID = try await findTelegramIDForUser(order.$client.id, on: req.db) else {
                         continue
                     }
-                    let title = order.dish?.title ?? "Блюдо"
-                    let orderID = order.id?.uuidString ?? ""
-                    let buttons = [
-                        TelegramInlineKeyboardButton(text: "Через 15 мин", callbackData: "order:time:\(orderID):15"),
-                        TelegramInlineKeyboardButton(text: "Через 30 мин", callbackData: "order:time:\(orderID):30"),
-                        TelegramInlineKeyboardButton(text: "Через час", callbackData: "order:time:\(orderID):60"),
-                        TelegramInlineKeyboardButton(text: "Укажу сам", callbackData: "order:time:\(orderID):custom")
-                    ]
+                    let title = (try? await order.$dish.get(on: req.db))?.title ?? "Блюдо"
                     try await client.sendMessage(
                         TelegramSendMessageRequest(
                             chatID: clientTelegramID,
-                            text: "Напоминание: ваш заказ по «\(title)» готов, но время получения не указано. Когда заберёте?",
-                            replyMarkup: TelegramInlineKeyboardMarkup(inlineKeyboard: [buttons])
+                            text: "Напоминание: ваш заказ «\(title)» готов, но время получения не указано. Уточните детали в каталоге.",
+                            replyMarkup: nil
                         ),
                         logger: app.logger
                     )

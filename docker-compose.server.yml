@@ -1,0 +1,14 @@
+# Продакшен-композ: SQLite + long polling
+services:
+  app:
+    build:
+      context: .
+      network: host
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./povar.sqlite:/app/povar.sqlite
+      - ./uploads:/app/Public/uploads

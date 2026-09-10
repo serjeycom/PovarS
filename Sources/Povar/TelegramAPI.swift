@@ -12,18 +12,6 @@ struct TelegramSendMessageRequest: Content {
     }
 }
 
-struct TelegramSendMessageReplyKeyboardRequest: Content {
-    let chatID: Int64
-    let text: String
-    let replyMarkup: TelegramReplyKeyboardMarkup
-
-    enum CodingKeys: String, CodingKey {
-        case chatID = "chat_id"
-        case text
-        case replyMarkup = "reply_markup"
-    }
-}
-
 struct TelegramAnswerCallbackQueryRequest: Content {
     let callbackQueryID: String
     let text: String?
@@ -44,72 +32,37 @@ struct TelegramInlineKeyboardMarkup: Content {
 
 struct TelegramInlineKeyboardButton: Content {
     let text: String
-    let callbackData: String
+    let callbackData: String?
+    let webApp: TelegramWebAppInfo?
+
+    init(text: String, callbackData: String) {
+        self.text = text
+        self.callbackData = callbackData
+        self.webApp = nil
+    }
+
+    init(text: String, webApp: TelegramWebAppInfo) {
+        self.text = text
+        self.callbackData = nil
+        self.webApp = webApp
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text, forKey: .text)
+        if let callbackData { try container.encode(callbackData, forKey: .callbackData) }
+        if let webApp { try container.encode(webApp, forKey: .webApp) }
+    }
 
     enum CodingKeys: String, CodingKey {
         case text
         case callbackData = "callback_data"
+        case webApp = "web_app"
     }
 }
 
-struct TelegramReplyKeyboardMarkup: Content {
-    let keyboard: [[TelegramKeyboardButton]]
-    let resizeKeyboard: Bool
-    let isPersistent: Bool
-    let oneTimeKeyboard: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case keyboard
-        case resizeKeyboard = "resize_keyboard"
-        case isPersistent = "is_persistent"
-        case oneTimeKeyboard = "one_time_keyboard"
-    }
-}
-
-struct TelegramKeyboardButton: Content {
-    let text: String
-    let requestLocation: Bool?
-    let requestContact: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case text
-        case requestLocation = "request_location"
-        case requestContact = "request_contact"
-    }
-
-    init(text: String, requestLocation: Bool? = nil, requestContact: Bool? = nil) {
-        self.text = text
-        self.requestLocation = requestLocation
-        self.requestContact = requestContact
-    }
-}
-
-struct TelegramSendPhotoRequest: Content {
-    let chatID: Int64
-    let photo: String
-    let caption: String?
-    let replyMarkup: TelegramInlineKeyboardMarkup?
-
-    enum CodingKeys: String, CodingKey {
-        case chatID = "chat_id"
-        case photo
-        case caption
-        case replyMarkup = "reply_markup"
-    }
-}
-
-struct TelegramSendVoiceRequest: Content {
-    let chatID: Int64
-    let voice: String
-    let caption: String?
-    let replyMarkup: TelegramInlineKeyboardMarkup?
-
-    enum CodingKeys: String, CodingKey {
-        case chatID = "chat_id"
-        case voice
-        case caption
-        case replyMarkup = "reply_markup"
-    }
+struct TelegramWebAppInfo: Content {
+    let url: String
 }
 
 struct TelegramSendInvoiceRequest: Content {
@@ -165,6 +118,27 @@ struct TelegramSendLocationRequest: Content {
     }
 }
 
+struct TelegramGetFileRequest: Content {
+    let fileID: String
+
+    enum CodingKeys: String, CodingKey {
+        case fileID = "file_id"
+    }
+}
+
+struct TelegramFile: Content {
+    let filePath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case filePath = "file_path"
+    }
+}
+
+struct TelegramGetFileResponse: Content {
+    let ok: Bool
+    let result: TelegramFile?
+}
+
 struct TelegramSetMyCommandsRequest: Content {
     let commands: [TelegramBotCommand]
 
@@ -185,9 +159,8 @@ struct TelegramBotClient {
     func setMyCommands(logger: Logger) async throws {
         let uri = "https://api.telegram.org/bot\(botToken)/setMyCommands"
         let request = TelegramSetMyCommandsRequest(commands: [
-            TelegramBotCommand(command: "start", description: "Начать / выбрать роль"),
-            TelegramBotCommand(command: "menu", description: "Открыть меню"),
-            TelegramBotCommand(command: "cancel", description: "Отменить текущее действие")
+            TelegramBotCommand(command: "start", description: "Открыть каталог"),
+            TelegramBotCommand(command: "menu", description: "Открыть каталог")
         ])
         let response = try await app.client.post(URI(string: uri)) { req in
             try req.content.encode(request)
@@ -202,67 +175,24 @@ struct TelegramBotClient {
         }
     }
 
-    func sendMessage(_ request: TelegramSendMessageRequest, logger: Logger) async throws {
-        let uri = "https://api.telegram.org/bot\(botToken)/sendMessage"
-        let response = try await app.client.post(URI(string: uri)) { req in
-            try req.content.encode(request)
+    /// Отправляет сообщение. Возвращает true, если Telegram принял запрос.
+    @discardableResult
+    func sendMessage(_ request: TelegramSendMessageRequest, logger: Logger) async throws -> Bool {
+        let delivered = try await withTimeout(seconds: 8) {
+            let uri = "https://api.telegram.org/bot\(botToken)/sendMessage"
+            let response = try await app.client.post(URI(string: uri)) { req in
+                try req.content.encode(request)
+            }
+            guard response.status == .ok else {
+                logger.error("telegram sendMessage failed", metadata: [
+                    "status": "\(response.status.code)",
+                    "reason": "\(response.status.reasonPhrase)"
+                ])
+                return false
+            }
+            return true
         }
-
-        guard response.status == .ok else {
-            logger.error("telegram sendMessage failed", metadata: [
-                "status": "\(response.status.code)",
-                "reason": "\(response.status.reasonPhrase)"
-            ])
-            return
-        }
-    }
-
-    func sendMessageWithReplyKeyboard(
-        _ request: TelegramSendMessageReplyKeyboardRequest,
-        logger: Logger
-    ) async throws {
-        let uri = "https://api.telegram.org/bot\(botToken)/sendMessage"
-        let response = try await app.client.post(URI(string: uri)) { req in
-            try req.content.encode(request)
-        }
-
-        guard response.status == .ok else {
-            logger.error("telegram sendMessageWithReplyKeyboard failed", metadata: [
-                "status": "\(response.status.code)",
-                "reason": "\(response.status.reasonPhrase)"
-            ])
-            return
-        }
-    }
-
-    func sendPhoto(_ request: TelegramSendPhotoRequest, logger: Logger) async throws {
-        let uri = "https://api.telegram.org/bot\(botToken)/sendPhoto"
-        let response = try await app.client.post(URI(string: uri)) { req in
-            try req.content.encode(request)
-        }
-
-        guard response.status == .ok else {
-            logger.error("telegram sendPhoto failed", metadata: [
-                "status": "\(response.status.code)",
-                "reason": "\(response.status.reasonPhrase)"
-            ])
-            return
-        }
-    }
-
-    func sendVoice(_ request: TelegramSendVoiceRequest, logger: Logger) async throws {
-        let uri = "https://api.telegram.org/bot\(botToken)/sendVoice"
-        let response = try await app.client.post(URI(string: uri)) { req in
-            try req.content.encode(request)
-        }
-
-        guard response.status == .ok else {
-            logger.error("telegram sendVoice failed", metadata: [
-                "status": "\(response.status.code)",
-                "reason": "\(response.status.reasonPhrase)"
-            ])
-            return
-        }
+        return delivered ?? false
     }
 
     func answerCallbackQuery(_ request: TelegramAnswerCallbackQueryRequest, logger: Logger) async throws {
@@ -281,17 +211,19 @@ struct TelegramBotClient {
     }
 
     func sendInvoice(_ request: TelegramSendInvoiceRequest, logger: Logger) async throws {
-        let uri = "https://api.telegram.org/bot\(botToken)/sendInvoice"
-        let response = try await app.client.post(URI(string: uri)) { req in
-            try req.content.encode(request)
-        }
+        _ = try await withTimeout(seconds: 8) {
+            let uri = "https://api.telegram.org/bot\(botToken)/sendInvoice"
+            let response = try await app.client.post(URI(string: uri)) { req in
+                try req.content.encode(request)
+            }
 
-        guard response.status == .ok else {
-            logger.error("telegram sendInvoice failed", metadata: [
-                "status": "\(response.status.code)",
-                "reason": "\(response.status.reasonPhrase)"
-            ])
-            return
+            guard response.status == .ok else {
+                logger.error("telegram sendInvoice failed", metadata: [
+                    "status": "\(response.status.code)",
+                    "reason": "\(response.status.reasonPhrase)"
+                ])
+                return
+            }
         }
     }
 
@@ -310,18 +242,32 @@ struct TelegramBotClient {
         }
     }
 
-    func sendLocation(_ request: TelegramSendLocationRequest, logger: Logger) async throws {
-        let uri = "https://api.telegram.org/bot\(botToken)/sendLocation"
-        let response = try await app.client.post(URI(string: uri)) { req in
-            try req.content.encode(request)
+    /// Resolves a Telegram file_id to a downloadable file URL via getFile.
+    /// Returns nil when the file cannot be resolved (bot token missing, bad id, etc.).
+    func resolveFileURL(_ fileID: String, logger: Logger) async throws -> String? {
+        if let cached = await PhotoURLCache.shared.get(fileID) {
+            return cached
         }
 
-        guard response.status == .ok else {
-            logger.error("telegram sendLocation failed", metadata: [
-                "status": "\(response.status.code)",
-                "reason": "\(response.status.reasonPhrase)"
-            ])
-            return
+        let path = try await withTimeout(seconds: 8) {
+            let uri = "https://api.telegram.org/bot\(botToken)/getFile"
+            let response = try await app.client.post(URI(string: uri)) { req in
+                try req.content.encode(TelegramGetFileRequest(fileID: fileID))
+            }
+
+            guard response.status == .ok else {
+                logger.error("telegram getFile failed", metadata: [
+                    "status": "\(response.status.code)",
+                    "reason": "\(response.status.reasonPhrase)"
+                ])
+                return nil as String?
+            }
+            let decoded = try response.content.decode(TelegramGetFileResponse.self)
+            return decoded.result?.filePath
         }
+        guard let path = path, let resolved = path, !resolved.isEmpty else { return nil }
+        let url = "https://api.telegram.org/file/bot\(botToken)/\(resolved)"
+        await PhotoURLCache.shared.set(fileID, url)
+        return url
     }
 }

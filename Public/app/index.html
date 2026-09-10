@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="Повар — заказывай домашнюю еду от местных поваров">
+    <meta name="theme-color" content="#000000">
+    <title>Повар</title>
+    <link rel="icon" type="image/png" href="/app/icon-192.png">
+    <link rel="apple-touch-icon" href="/app/icon-192.png">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/app/povar.css?v=5">
+    <script>
+      // Telegram SDK грузим асинхронно и без блокировки страницы:
+      // если telegram.org недоступен (например, заблокирован у провайдера),
+      // сайт всё равно открывается — просто без функций Telegram.
+      (function () {
+        var s = document.createElement('script');
+        s.src = 'https://telegram.org/js/telegram-web-app.js';
+        s.async = true;
+        s.onerror = function () {};
+        document.head.appendChild(s);
+      })();
+    </script>
+</head>
+<body>
+    <div id="app">
+        <header class="topbar" id="header">
+            <div class="topbar-inner">
+                <div class="topbar-left" id="logoBtn" style="cursor:pointer">
+                    <div class="logo">🍲</div>
+                    <div class="brand">
+                        <span class="brand-title">Повар</span>
+                        <span class="brand-sub">Домашняя еда</span>
+                    </div>
+                    <div class="topbar-city" id="topbarCity">Каталог</div>
+                </div>
+                <div class="topbar-center">
+                    <div class="search-wrap">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+                        <input id="searchInput" placeholder="Борщ, пельмени, торт — что ищете?" />
+                        <button class="search-btn" id="searchBtn">Найти</button>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <span id="uiDebug" style="color:var(--brand-primary);font-weight:700;font-size:12px;white-space:nowrap;align-self:center">v29</span>
+                    <button class="topbar-action" id="createTopBtn"><span class="topbar-action-icon">＋</span> Добавить блюдо</button>
+                    <button class="icon-btn" id="profileBtn" aria-label="Профиль">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="topbar-cats">
+                <button class="cat-pill active" data-cat="all">✨ Все</button>
+                <button class="cat-pill" data-cat="breakfast">🥞 Завтрак</button>
+                <button class="cat-pill" data-cat="lunch">🍲 Обед</button>
+                <button class="cat-pill" data-cat="dinner">🍽 Ужин</button>
+                <button class="cat-pill" data-cat="dessert">🍰 Десерт</button>
+                <button class="cat-pill" data-cat="drink">🥤 Напиток</button>
+            </div>
+        </header>
+
+        <div class="layout">
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-head">
+                    <h3>Фильтры</h3>
+                    <button class="btn-ghost small" id="resetFilters">Сбросить</button>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Город</h4>
+                    <select id="sidebarCity" class="select">
+                        <option value="">Все города</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Категория</h4>
+                    <select id="sidebarCategory" class="select">
+                        <option value="">Все</option>
+                        <option value="breakfast">🥞 Завтрак</option>
+                        <option value="lunch">🍲 Обед</option>
+                        <option value="dinner">🍽 Ужин</option>
+                        <option value="dessert">🍰 Десерт</option>
+                        <option value="drink">🥤 Напиток</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Макс. цена</h4>
+                    <select id="sidebarPrice" class="select">
+                        <option value="">Любая</option>
+                        <option value="200">до 200₽</option>
+                        <option value="300">до 300₽</option>
+                        <option value="500">до 500₽</option>
+                        <option value="1000">до 1000₽</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Сортировка</h4>
+                    <select id="sidebarSort" class="select">
+                        <option value="distance">Рядом</option>
+                        <option value="price">Дешевле</option>
+                        <option value="rating">Высокий рейтинг</option>
+                        <option value="new">Новинки</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Условия</h4>
+                    <label class="check"><input type="checkbox" id="fToday"> <span>🔥 Только сегодня</span></label>
+                    <label class="check"><input type="checkbox" id="fPhoto"> <span>📷 С фото</span></label>
+                </div>
+
+                <button class="btn btn-primary" id="applyFilters" style="width:100%">Показать</button>
+                <p class="sidebar-hint">Нажми «Показать», чтобы применить фильтры</p>
+            </aside>
+
+            <main class="main" id="main">
+                <div class="tab-content" id="tabBrowse">
+                    <div class="content-head">
+                        <div>
+                            <h2 id="browseTitle">Меню поблизости</h2>
+                            <p id="browseCount" style="font-size:13px;color:var(--text-500)">Загружаем...</p>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <select id="sortSelect" class="select" style="width:auto;min-width:140px">
+                                <option value="distance">Рядом</option>
+                                <option value="price">Дешевле</option>
+                                <option value="rating">Рейтинг</option>
+                                <option value="new">Новинки</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="nearbySection" style="display:none;margin-bottom:20px">
+                        <div class="hero">
+                            <div class="hero-text">
+                                <h2>Готово сегодня 🔥</h2>
+                                <p>Свежие блюда, которые готовят прямо сейчас</p>
+                            </div>
+                            <div class="hero-illust">🍲</div>
+                        </div>
+                    </div>
+
+                    <div class="listings-grid" id="listingsContainer">
+                        <div class="loading" id="loadingListings"><div class="spinner"></div><p>Загружаем блюда...</p></div>
+                    </div>
+                    <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Показать ещё</button>
+                    <div class="empty-state" id="emptyListings" style="display:none;">
+                        <div class="empty-illust">🍲</div>
+                        <h3>Блюд не нашлось</h3>
+                        <p>Попробуй сбросить фильтры или загляните позже</p>
+                        <button class="btn btn-primary" id="resetFromEmpty">Сбросить фильтры</button>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tabOrders" style="display:none;">
+                    <div class="content-head">
+                        <h2>Мои заказы</h2>
+                    </div>
+                    <div id="ordersContainer"><div class="loading"><div class="spinner"></div><p>Загружаем...</p></div></div>
+                    <div class="empty-state" id="emptyOrders" style="display:none;">
+                        <div class="empty-illust">📋</div>
+                        <h3>Заказов пока нет</h3>
+                        <p>Закажите домашнюю еду у местных поваров</p>
+                        <button class="btn btn-primary" id="goToBrowse">Найти блюда</button>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tabFavorites" style="display:none;">
+                    <div class="content-head"><h2>Избранное</h2></div>
+                    <div id="favoritesContainer"><div class="loading"><div class="spinner"></div><p>Загружаем...</p></div></div>
+                    <div class="empty-state" id="emptyFavorites" style="display:none;">
+                        <div class="empty-illust">💛</div>
+                        <h3>Избранного нет</h3>
+                        <p>Нажмите ♡ на блюде, чтобы сохранить</p>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tabCart" style="display:none;">
+                    <div class="content-head">
+                        <h2>Корзина</h2>
+                    </div>
+                    <div id="cartContainer"><div class="loading"><div class="spinner"></div><p>Загружаем...</p></div></div>
+                    <div class="empty-state" id="emptyCart" style="display:none;">
+                        <div class="empty-illust">🛒</div>
+                        <h3>Корзина пуста</h3>
+                        <p>Добавьте блюда из каталога</p>
+                        <button class="btn btn-primary" id="goToBrowseFromCart">Найти блюда</button>
+                    </div>
+                    <div id="cartSummary" style="display:none;margin-top:16px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:16px">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:15px;font-weight:700">
+                            <span>Итого:</span>
+                            <span id="cartTotal">0₽</span>
+                        </div>
+                        <button class="btn btn-primary" id="checkoutBtn" style="width:100%">Оформить заказ</button>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tabProfile" style="display:none;">
+                    <div class="content-head"><h2>Профиль</h2></div>
+                    <div id="profileContainer"><div class="loading"><div class="spinner"></div><p>Загружаем...</p></div></div>
+                </div>
+
+                <footer class="site-footer">
+                    <div>© 2025 Повар • Домашняя еда рядом • <b id="uiVersion">v29</b></div>
+                </footer>
+            </main>
+        </div>
+
+        <button class="fab" id="fab" aria-label="Добавить блюдо">
+            <span class="fab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></span>
+            <span>Добавить</span>
+        </button>
+
+        <nav class="bottom-nav" id="bottomNav">
+            <button class="nav-item active" data-tab="browse"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg></span><span>Поиск</span></button>
+            <button class="nav-item" data-tab="orders"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></span><span>Заказы</span></button>
+            <button class="nav-item" data-tab="favorites"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></span><span>Избранное</span></button>
+            <button class="nav-item" data-tab="cart"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg></span><span>Корзина</span></button>
+            <button class="nav-item" data-tab="profile"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span><span>Профиль</span></button>
+        </nav>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay" style="display:none;">
+        <div class="modal" id="modal">
+            <div class="modal-header"><h2 id="modalTitle"></h2><button class="modal-close" id="modalClose" aria-label="Закрыть"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+    <div class="toast-container" id="toastContainer"></div>
+    <script type="module" src="/app/app.js?v=13"></script>
+    <script>
+      // Отладочный индикатор: версия и ширина окна (убрать после отладки вёрстки)
+      (function () {
+        var dbg = document.getElementById('uiDebug');
+        function upd() { if (dbg) dbg.textContent = 'v29 • ' + window.innerWidth + 'px'; }
+        upd();
+        window.addEventListener('resize', upd);
+      })();
+    </script>
+    <script>
+      // Если приложение не стартовало за 10 секунд — показываем подсказку
+      // вместо вечного лоадера.
+      setTimeout(function () {
+        if (window.__POVAR_READY) return;
+        var el = document.getElementById('loadingListings');
+        if (el) {
+          el.innerHTML = '<div class="empty-state" style="display:flex"><div class="empty-illust">⚠️</div>' +
+            '<h3>Приложение не загрузилось</h3>' +
+            '<p>Обновите страницу (Ctrl+Shift+R). Если не поможет — откройте консоль (F12 → Console) и пришлите ошибки разработчику.</p>' +
+            '<button class="btn btn-primary" onclick="location.reload()">Обновить</button></div>';
+        }
+      }, 10000);
+      // Service worker'ы больше не используются: удаляем все регистрации.
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister(); });
+        });
+      }
+    </script>
+</body>
+</html>

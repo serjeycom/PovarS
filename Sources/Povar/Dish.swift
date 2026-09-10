@@ -25,6 +25,9 @@ final class Dish: Model, Content, @unchecked Sendable {
     @OptionalField(key: "photo_file_id")
     var photoFileID: String?
 
+    @OptionalField(key: "photo_path")
+    var photoPath: String?
+
     @OptionalField(key: "cooked_date")
     var cookedDate: String?
 

@@ -3,7 +3,7 @@ import Fluent
 struct AddBalanceToUser: AsyncMigration {
     func prepare(on database: Database) async throws {
         try await database.schema(User.schema)
-            .field("balance", .int, .sql(raw: "DEFAULT 0"))
+            .field("balance", .int, .sql(unsafeRaw: "DEFAULT 0"))
             .update()
     }
 
