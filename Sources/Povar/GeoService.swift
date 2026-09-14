@@ -180,10 +180,20 @@ enum GeoService {
         }
     }
 
-    /// Nominatim отдаёт длинную строку вида
-    /// «Тверская, 12, Тверской район, Москва, ЦФО, Россия» — оставляем
-    /// первые три значимые части, чтобы влезало в подсказку.
+    /// Собираем короткую подпись вида «Тверская, 12, Москва».
+    /// Из display_name брать первые части нельзя: у Nominatim порядок
+    /// «улица, дом, корпус, улица, район, город…», и город теряется.
+    /// Поэтому используем структурированный address из ответа.
     private static func shortLabel(_ place: NominatimPlace) -> String {
+        if let a = place.address {
+            var parts: [String] = []
+            if let road = a.road, !road.isEmpty { parts.append(road) }
+            if let house = a.houseNumber, !house.isEmpty { parts.append(house) }
+            let city = a.city ?? a.town ?? a.village ?? a.municipality
+            if let city, !city.isEmpty { parts.append(city) }
+            if parts.count >= 2 { return parts.joined(separator: ", ") }
+        }
+        // Запасной вариант — первые три значимые части display_name.
         let parts = place.displayName
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -205,10 +215,25 @@ private struct NominatimPlace: Decodable {
     let lat: String
     let lon: String
     let displayName: String
+    let address: NominatimAddress?
 
     enum CodingKeys: String, CodingKey {
-        case lat, lon
+        case lat, lon, address
         case displayName = "display_name"
+    }
+}
+
+private struct NominatimAddress: Decodable {
+    let road: String?
+    let houseNumber: String?
+    let city: String?
+    let town: String?
+    let village: String?
+    let municipality: String?
+
+    enum CodingKeys: String, CodingKey {
+        case road, city, town, village, municipality
+        case houseNumber = "house_number"
     }
 }
 
