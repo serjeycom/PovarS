@@ -88,6 +88,176 @@
     return m[cat] || cat;
   }
 
+  // --- КБЖУ ---
+  // На карточке показываем одну цифру: калории на порцию, если известен вес
+  // порции, иначе на 100 г.
+  function nutritionChip(d) {
+    const n = d.nutrition;
+    if (!n) return '';
+    const perPortion = n.kcalPerPortion != null;
+    const kcal = perPortion ? n.kcalPerPortion : n.kcalPer100g;
+    if (kcal == null) return '';
+    const suffix = perPortion ? '' : '/100 г';
+    return `<span class="pill pill-kcal" title="Калорийность">🔥 ${Math.round(kcal)} ккал${suffix}</span>`;
+  }
+
+  // Полный блок БЖУ для карточки блюда в модалке.
+  function nutritionBlock(d) {
+    const n = d.nutrition;
+    if (!n) return '';
+    const perPortion = n.kcalPerPortion != null;
+    const pick = (portion, per100) => (perPortion ? portion : per100);
+    const rows = [
+      ['Калории', pick(n.kcalPerPortion, n.kcalPer100g), 'ккал'],
+      ['Белки', pick(n.proteinPerPortion, n.proteinPer100g), 'г'],
+      ['Жиры', pick(n.fatPerPortion, n.fatPer100g), 'г'],
+      ['Углеводы', pick(n.carbsPerPortion, n.carbsPer100g), 'г'],
+    ].filter(r => r[1] != null);
+    if (!rows.length) return '';
+
+    const basis = perPortion
+      ? `на порцию${n.portionWeightG ? ` (${n.portionWeightG} г)` : ''}`
+      : 'на 100 г';
+    return `
+      <div class="nutrition-block">
+        <div class="nutrition-head">🍏 КБЖУ <span>${basis}</span></div>
+        <div class="nutrition-grid">
+          ${rows.map(r => `<div class="nutrition-cell"><b>${formatNumber(r[1])}</b><span>${r[2]}</span><i>${r[0]}</i></div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  function formatNumber(v) {
+    if (v == null) return '—';
+    return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10);
+  }
+
+  // Автозаполнение КБЖУ из открытой базы продуктов Open Food Facts.
+  function initNutritionSearch() {
+    const input = document.getElementById('nutriQuery');
+    const box = document.getElementById('nutriResults');
+    if (!input || !box) return;
+
+    let timer = null;
+    let lastQuery = '';
+
+    const closeBox = () => { box.style.display = 'none'; };
+
+    input.addEventListener('blur', () => setTimeout(closeBox, 220));
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 3) { closeBox(); box.innerHTML = ''; return; }
+      timer = setTimeout(async () => {
+        if (q === lastQuery) return;
+        lastQuery = q;
+        box.style.display = 'block';
+        box.innerHTML = '<div class="nutri-hint">Ищем…</div>';
+        try {
+          const items = await api('/nutrition/search?q=' + encodeURIComponent(q));
+          if (!items.length) {
+            box.innerHTML = '<div class="nutri-hint">Ничего не нашлось — впишите цифры вручную</div>';
+            return;
+          }
+          box.innerHTML = items.map((p, i) => {
+            const vals = [
+              p.kcalPer100g != null ? `${formatNumber(p.kcalPer100g)} ккал` : null,
+              p.proteinPer100g != null ? `Б ${formatNumber(p.proteinPer100g)}` : null,
+              p.fatPer100g != null ? `Ж ${formatNumber(p.fatPer100g)}` : null,
+              p.carbsPer100g != null ? `У ${formatNumber(p.carbsPer100g)}` : null,
+            ].filter(Boolean).join(' • ');
+            return `<button type="button" class="nutri-item" data-i="${i}">
+              <span class="nutri-name">${escapeHtml(p.name)}${p.brand ? ` <i>${escapeHtml(p.brand)}</i>` : ''}</span>
+              <span class="nutri-vals">${vals} <em>на 100 г</em></span>
+            </button>`;
+          }).join('');
+          box.querySelectorAll('.nutri-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const p = items[parseInt(btn.dataset.i, 10)];
+              const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; };
+              set('dishKcal', p.kcalPer100g);
+              set('dishProtein', p.proteinPer100g);
+              set('dishFat', p.fatPer100g);
+              set('dishCarbs', p.carbsPer100g);
+              input.value = p.name;
+              closeBox();
+              toast(`КБЖУ подставлено: ${p.name}`);
+            });
+          });
+        } catch (e) {
+          box.innerHTML = '<div class="nutri-hint">Не удалось получить данные — впишите вручную</div>';
+        }
+      }, 450);
+    });
+  }
+
+  // Подсказки адреса через Nominatim (запрос идёт через наш сервер).
+  // Возвращает объект, в который складываются координаты выбранного адреса.
+  function initAddressSearch() {
+    const picked = { lat: null, lon: null, label: null };
+    const input = document.getElementById('orderAddress');
+    const box = document.getElementById('addrResults');
+    if (!input || !box) return picked;
+
+    let timer = null;
+    let lastQuery = '';
+    const closeBox = () => { box.style.display = 'none'; };
+
+    input.addEventListener('input', () => {
+      // Адрес поправили руками — прежние координаты больше не подходят.
+      picked.lat = null; picked.lon = null; picked.label = null;
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 4) { closeBox(); box.innerHTML = ''; return; }
+      timer = setTimeout(async () => {
+        if (q === lastQuery) return;
+        lastQuery = q;
+        box.style.display = 'block';
+        box.innerHTML = '<div class="nutri-hint">Ищем адрес…</div>';
+        try {
+          const items = await api('/geo/search?q=' + encodeURIComponent(q));
+          if (!items.length) {
+            box.innerHTML = '<div class="nutri-hint">Ничего не нашли — введите адрес вручную</div>';
+            return;
+          }
+          box.innerHTML = items
+            .map((p, i) => `<button type="button" class="addr-item" data-i="${i}">📍 ${escapeHtml(p.label)}</button>`)
+            .join('');
+          box.querySelectorAll('.addr-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const p = items[parseInt(btn.dataset.i, 10)];
+              picked.lat = p.lat; picked.lon = p.lon; picked.label = p.label;
+              input.value = p.label;
+              closeBox();
+              toast('Адрес выбран');
+            });
+          });
+        } catch (e) {
+          box.innerHTML = '<div class="nutri-hint">Подсказки недоступны — введите адрес вручную</div>';
+        }
+      }, 600);
+    });
+
+    input.addEventListener('blur', () => setTimeout(closeBox, 250));
+    return picked;
+  }
+
+  /// Собирает КБЖУ из формы блюда.
+  function readNutritionForm() {
+    const num = (id) => {
+      const v = parseFloat(document.getElementById(id)?.value);
+      return Number.isFinite(v) ? v : null;
+    };
+    const weight = parseInt(document.getElementById('dishPortionWeight')?.value, 10);
+    return {
+      caloriesPer100g: num('dishKcal'),
+      proteinPer100g: num('dishProtein'),
+      fatPer100g: num('dishFat'),
+      carbsPer100g: num('dishCarbs'),
+      portionWeightG: Number.isFinite(weight) ? weight : null,
+    };
+  }
+
   function statusTitle(status) {
     const m = { new: 'Новый', accepted: 'Принят', cooking: 'Готовится', ready: 'Готов', onTheWay: 'В пути', delivered: 'Доставлен', cancelled: 'Отменён' };
     return m[status] || status;
@@ -347,12 +517,13 @@
     const todayPill = d.isToday ? '<span class="pill pill-today">🔥 Сегодня</span>' : '';
     const portionsPill = d.isToday && d.portionsLeft != null ? `<span class="pill">🍽 Осталось ${d.portionsLeft}</span>` : '';
     const photoPill = isPhotoUrl ? '<span class="pill pill-photo">📷</span>' : '';
+    const kcalPill = nutritionChip(d);
     const ratingHtml = d.cook?.rating ? `<span class="listing-rating">⭐ ${d.cook.rating.toFixed(1)}</span>` : '';
     const distanceHtml = d.cook?.distance != null ? `<span class="listing-distance">📍 ${d.cook.distance.toFixed(1)} км</span>` : '';
     const isInCart = state.cart.some(c => (c.dish?.id || c.dishId) === d.id);
 
     return `<article class="listing-card" data-id="${d.id}" data-category="${d.category || ''}">
-      <div class="listing-image">${imageContent}<div class="badge-row"><div class="badge-left">${todayPill}${portionsPill}</div><div class="badge-right">${photoPill}</div></div></div>
+      <div class="listing-image">${imageContent}<div class="badge-row"><div class="badge-left">${todayPill}${portionsPill}</div><div class="badge-right">${kcalPill}${photoPill}</div></div></div>
       <div class="listing-content">
         <div class="listing-header">
           <div class="listing-type"><span class="type-dot"></span>${categoryLabel(d.category)}</div>
@@ -459,6 +630,7 @@
           ${soldOut ? '<span style="background:#FF3B30;color:white;padding:6px 10px;border-radius:8px;font-size:13px">Раскуплено</span>' : ''}
         </div>
         ${dish.details ? `<p>${escapeHtml(dish.details)}</p>` : ''}
+        ${nutritionBlock(dish)}
         <p style="color:var(--text-500);font-size:13px">👨‍🍳 Повар: ${escapeHtml(dish.cook?.name || 'Неизвестный')}</p>
         ${dish.cook?.rating ? `<p style="color:var(--text-500);font-size:13px">⭐ Рейтинг: ${dish.cook.rating.toFixed(1)}</p>` : ''}
         ${dish.cook?.distance != null ? `<p style="color:var(--text-500);font-size:13px">📍 ${dish.cook.distance.toFixed(1)} км от вас</p>` : ''}
@@ -613,6 +785,7 @@
           👨‍🍳 ${escapeHtml(o.cook?.name || 'Повар')} •
           💰 ${formatPrice(o.totalPrice)}₽
           ${o.isDelivery ? ` • 🚚 Доставка${o.address ? ` (${escapeHtml(o.address)})` : ''}` : ' • 🍽 Самовывоз'}
+          ${deliveryRouteHtml(o)}
           ${o.createdAt ? `<br>📅 ${new Date(o.createdAt).toLocaleDateString('ru-RU')}` : ''}
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -639,6 +812,7 @@
           ${o.client?.username ? ` • @${escapeHtml(o.client.username)}` : ''}
           <br>💰 ${formatPrice(o.totalPrice)}₽
           ${o.isDelivery ? ` • 🚚 Доставка${o.address ? ` (${escapeHtml(o.address)})` : ''}` : ' • 🍽 Самовывоз'}
+          ${deliveryRouteHtml(o)}
           ${o.comment ? `<br>💬 ${escapeHtml(o.comment)}` : ''}
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
@@ -647,6 +821,38 @@
         </div>
       </div>`;
   }
+
+  // Расстояние до адреса доставки + кнопка «Маршрут» (считается по дорогам через OSRM).
+  function deliveryRouteHtml(o) {
+    if (!o.isDelivery) return '';
+    const parts = [];
+    if (o.distanceKm != null) parts.push(`<br>📏 ${formatNumber(o.distanceKm)} км от повара по прямой`);
+    if (o.deliveryLat != null && o.deliveryLon != null) {
+      parts.push(`<button class="route-btn" data-route="${o.id}">🚗 Маршрут по дорогам</button>`);
+    }
+    return parts.length ? `<div class="route-row">${parts.join(' ')}</div>` : '';
+  }
+
+  // Делегированный обработчик кнопки «Маршрут» — считаем по дорогам один раз по клику,
+  // чтобы не дёргать OSRM на каждый заказ в списке.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target?.closest?.('[data-route]');
+    if (!btn || btn.disabled) return;
+    const orderId = btn.dataset.route;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Считаем…';
+    try {
+      const r = await api(`/orders/${orderId}/route`);
+      btn.textContent = `🚗 ${formatNumber(r.distanceKm)} км • ~${Math.round(r.durationMin)} мин`;
+      btn.classList.add('loaded');
+    } catch (err) {
+      btn.textContent = original;
+      toast(err.message || 'Не удалось построить маршрут', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   function bindOrderActions(container) {
     container.querySelectorAll('[data-cancel]').forEach(btn => {
@@ -920,7 +1126,9 @@
         </div>
         <div class="form-group" id="orderAddressGroup" style="display:none">
           <label>Адрес доставки</label>
-          <input type="text" id="orderAddress" placeholder="г. Москва, ул. Ленина, 5" value="${escapeHtml(p?.address || '')}">
+          <input type="text" id="orderAddress" placeholder="Начните вводить: Москва, Тверская 12" value="${escapeHtml(p?.address || '')}" autocomplete="off">
+          <div class="addr-results" id="addrResults" style="display:none"></div>
+          <small class="form-hint" id="addrHint">Выберите адрес из подсказок — посчитаем расстояние от повара</small>
         </div>
         <div class="form-group">
           <label>Телефон для связи</label>
@@ -939,6 +1147,7 @@
     document.getElementById('orderDelivery')?.addEventListener('change', (e) => {
       document.getElementById('orderAddressGroup').style.display = e.target.value === 'true' ? 'block' : 'none';
     });
+    const pickedAddress = initAddressSearch();
 
     const confirmBtn = document.getElementById('confirmOrder');
     confirmBtn?.addEventListener('click', async () => {
@@ -960,7 +1169,9 @@
             comment,
             isDelivery,
             phone,
-            address
+            address,
+            addressLat: pickedAddress?.lat ?? null,
+            addressLon: pickedAddress?.lon ?? null
           })
         });
         closeModal();
@@ -1577,6 +1788,43 @@
           <input type="checkbox" id="dishToday">
           <span>🔥 Готовлю сегодня</span>
         </div>
+
+        <div class="form-section">
+          <div class="form-section-head">
+            <span>🍏 КБЖУ</span>
+            <small>необязательно — но с ним блюдо выбирают чаще</small>
+          </div>
+          <div class="form-group">
+            <label>Найти продукт в базе</label>
+            <input type="text" id="nutriQuery" placeholder="борщ, творог, куриная грудка..." autocomplete="off">
+            <div class="nutri-results" id="nutriResults" style="display:none"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ккал на 100 г</label>
+              <input type="number" id="dishKcal" min="0" max="900" step="0.1" placeholder="325">
+            </div>
+            <div class="form-group">
+              <label>Белки на 100 г</label>
+              <input type="number" id="dishProtein" min="0" max="100" step="0.1" placeholder="7">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Жиры на 100 г</label>
+              <input type="number" id="dishFat" min="0" max="100" step="0.1" placeholder="9.5">
+            </div>
+            <div class="form-group">
+              <label>Углеводы на 100 г</label>
+              <input type="number" id="dishCarbs" min="0" max="100" step="0.1" placeholder="53">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Вес порции, г</label>
+            <input type="number" id="dishPortionWeight" min="1" max="5000" placeholder="350">
+            <small class="form-hint">Если указать вес — покажем КБЖУ на порцию, а не на 100 г</small>
+          </div>
+        </div>
         <div class="form-group">
           <label>Фото блюда</label>
           <input type="file" id="dishPhoto" accept="image/*" style="padding:10px">
@@ -1586,6 +1834,8 @@
       <button class="btn btn-secondary" id="addDishCancel">Отмена</button>
       <button class="btn btn-primary" id="saveDish">Добавить</button>
     `);
+
+    initNutritionSearch();
 
     document.getElementById('addDishCancel')?.addEventListener('click', closeModal);
     const saveBtn = document.getElementById('saveDish');
@@ -1606,7 +1856,8 @@
             price,
             category: document.getElementById('dishCategory')?.value || 'lunch',
             portionsTotal: parseInt(document.getElementById('dishPortions')?.value) || null,
-            isToday: document.getElementById('dishToday')?.checked || false
+            isToday: document.getElementById('dishToday')?.checked || false,
+            ...readNutritionForm()
           })
         });
         // Загружаем фото, если выбрано

@@ -277,6 +277,25 @@ struct MiniAppController {
         api.get("cook", ":id") { req async throws -> CookDTO in
             try await self.getCook(req)
         }
+
+        // КБЖУ: поиск продукта в открытой базе Open Food Facts
+        api.get("nutrition", "search") { req async throws -> [NutritionProductDTO] in
+            try await self.searchNutrition(req)
+        }
+
+        // Адреса (Nominatim) и маршрут по дорогам (OSRM)
+        api.get("geo", "search") { req async throws -> [GeoPlaceDTO] in
+            try await self.searchAddress(req)
+        }
+
+        api.get("geo", "route") { req async throws -> RouteDTO in
+            try await self.routeInfo(req)
+        }
+
+        // Маршрут повар → адрес доставки конкретного заказа
+        api.get("orders", ":id", "route") { req async throws -> RouteDTO in
+            try await self.orderRoute(req)
+        }
     }
 
     // MARK: - Helpers
@@ -289,6 +308,14 @@ struct MiniAppController {
             throw Abort(.notFound, reason: "User not found")
         }
         return (user, miniAppID.value)
+    }
+
+    /// Расстояние по прямой от повара до адреса доставки (км).
+    /// nil, если координаты доставки не сохранились (старые заказы).
+    private func deliveryDistance(order: Order, cook: User?) -> Double? {
+        guard let lat = order.deliveryLat, let lon = order.deliveryLon,
+              let cookLat = cook?.latitude, let cookLon = cook?.longitude else { return nil }
+        return (calculateDistance(lat1: cookLat, lon1: cookLon, lat2: lat, lon2: lon) * 10).rounded() / 10
     }
 
     private func calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
@@ -343,7 +370,8 @@ struct MiniAppController {
                 distance: distance
             ),
             isFavorite: isFavorite,
-            createdAt: dish.createdAt.map { ISO8601DateFormatter().string(from: $0) }
+            createdAt: dish.createdAt.map { ISO8601DateFormatter().string(from: $0) },
+            nutrition: NutritionDTO.from(dish)
         )
     }
 
@@ -573,10 +601,36 @@ struct MiniAppController {
         if dto.isToday == true {
             dish.cookedDate = formatDate(Date())
         }
+        applyNutrition(
+            to: dish,
+            calories: dto.caloriesPer100g, protein: dto.proteinPer100g,
+            fat: dto.fatPer100g, carbs: dto.carbsPer100g, portionWeight: dto.portionWeightG
+        )
 
         try await dish.save(on: req.db)
 
         return try await enrichDish(dish, req: req)
+    }
+
+    /// Проставляет КБЖУ с валидацией: отрицательные значения и абсурдные
+    /// калории отбрасываем, чтобы в базе не появилось «-5 ккал».
+    private func applyNutrition(
+        to dish: Dish,
+        calories: Double?, protein: Double?, fat: Double?, carbs: Double?, portionWeight: Int?
+    ) {
+        func clean(_ value: Double?, max: Double) -> Double? {
+            guard let value, value >= 0, value <= max else { return nil }
+            return (value * 10).rounded() / 10
+        }
+        dish.caloriesPer100g = clean(calories, max: 900)
+        dish.proteinPer100g = clean(protein, max: 100)
+        dish.fatPer100g = clean(fat, max: 100)
+        dish.carbsPer100g = clean(carbs, max: 100)
+        if let portionWeight, portionWeight > 0, portionWeight <= 5000 {
+            dish.portionWeightG = portionWeight
+        } else {
+            dish.portionWeightG = nil
+        }
     }
 
     // MARK: - Cart
@@ -613,7 +667,8 @@ struct MiniAppController {
                     portionsTotal: item.dish.portionsTotal,
                     cook: CookSummaryDTO(id: cook?.id?.uuidString ?? "", name: cook?.firstName ?? "Повар", rating: nil, reviewCount: 0, distance: nil),
                     isFavorite: false,
-                    createdAt: nil
+                    createdAt: nil,
+                    nutrition: NutritionDTO.from(item.dish)
                 ),
                 quantity: item.quantity
             ))
@@ -652,7 +707,8 @@ struct MiniAppController {
                     portionsTotal: dish.portionsTotal,
                     cook: CookSummaryDTO(id: cook?.id?.uuidString ?? "", name: cook?.firstName ?? "Повар", rating: nil, reviewCount: 0, distance: nil),
                     isFavorite: false,
-                    createdAt: nil
+                    createdAt: nil,
+                    nutrition: NutritionDTO.from(dish)
                 ),
                 quantity: existing.quantity
             )
@@ -676,7 +732,8 @@ struct MiniAppController {
                 portionsTotal: dish.portionsTotal,
                 cook: CookSummaryDTO(id: cook?.id?.uuidString ?? "", name: cook?.firstName ?? "Повар", rating: nil, reviewCount: 0, distance: nil),
                 isFavorite: false,
-                createdAt: nil
+                createdAt: nil,
+                nutrition: NutritionDTO.from(dish)
             ),
             quantity: dto.quantity
         )
@@ -721,7 +778,8 @@ struct MiniAppController {
                 portionsTotal: dish?.portionsTotal,
                 cook: CookSummaryDTO(id: cookUser?.id?.uuidString ?? "", name: cookUser?.firstName ?? "Повар", rating: nil, reviewCount: 0, distance: nil),
                 isFavorite: false,
-                createdAt: nil
+                createdAt: nil,
+                nutrition: dish.flatMap { NutritionDTO.from($0) }
             ),
             quantity: item.quantity
         )
@@ -837,6 +895,12 @@ struct MiniAppController {
             order.isDelivery = isDelivery
             if isDelivery {
                 order.shippingAddress = user.address
+                // Координаты выбранного адреса — чтобы потом посчитать маршрут
+                if let lat = dto.addressLat, let lon = dto.addressLon,
+                   (-90...90).contains(lat), (-180...180).contains(lon) {
+                    order.deliveryLat = lat
+                    order.deliveryLon = lon
+                }
             }
             try await order.save(on: req.db)
             guard let orderID = order.id else { continue }
@@ -898,7 +962,10 @@ struct MiniAppController {
                 createdAt: order.createdAt.map { ISO8601DateFormatter().string(from: $0) },
                 items: itemDTOs,
                 isDelivery: order.isDelivery,
-                address: order.isDelivery == true ? order.shippingAddress : nil
+                address: order.isDelivery == true ? order.shippingAddress : nil,
+                deliveryLat: order.deliveryLat,
+                deliveryLon: order.deliveryLon,
+                distanceKm: deliveryDistance(order: order, cook: cook)
             ))
         }
 
@@ -959,7 +1026,10 @@ struct MiniAppController {
             createdAt: order.createdAt.map { ISO8601DateFormatter().string(from: $0) },
             items: [],
             isDelivery: order.isDelivery,
-            address: nil
+            address: nil,
+            deliveryLat: order.deliveryLat,
+            deliveryLon: order.deliveryLon,
+            distanceKm: deliveryDistance(order: order, cook: cook)
         )
     }
 
@@ -979,6 +1049,7 @@ struct MiniAppController {
         guard let userID = user.id else { throw Abort(.notFound) }
         let orders = try await Order.query(on: req.db)
             .filter(\.$client.$id == userID)
+            .with(\.$client)
             .with(\.$dish)
             .with(\.$cook)
             .with(\.$items)
@@ -1001,7 +1072,8 @@ struct MiniAppController {
                         portionsTotal: d.portionsTotal,
                         cook: CookSummaryDTO(id: order.cook.id?.uuidString ?? "", name: order.cook.firstName, rating: nil, reviewCount: 0, distance: nil),
                         isFavorite: false,
-                        createdAt: nil
+                        createdAt: nil,
+                        nutrition: NutritionDTO.from(d)
                     )
                 },
                 cook: CookSummaryDTO(id: order.cook.id?.uuidString ?? "", name: order.cook.firstName, rating: nil, reviewCount: 0, distance: nil),
@@ -1013,7 +1085,10 @@ struct MiniAppController {
                 createdAt: order.createdAt.map { ISO8601DateFormatter().string(from: $0) },
                 items: order.items.map { OrderItemDTO(dishId: $0.$dish.id.uuidString, title: $0.dishTitle, price: $0.price, quantity: $0.quantity) },
                 isDelivery: order.isDelivery,
-                address: order.isDelivery == true ? (order.shippingAddress ?? order.client.address) : nil
+                address: order.isDelivery == true ? (order.shippingAddress ?? order.client.address) : nil,
+                deliveryLat: order.deliveryLat,
+                deliveryLon: order.deliveryLon,
+                distanceKm: deliveryDistance(order: order, cook: order.cook)
             )
         }
     }
@@ -1091,6 +1166,74 @@ struct MiniAppController {
         )
     }
 
+    // MARK: - КБЖУ и гео
+
+    /// Поиск продукта в Open Food Facts. Доступно всем авторизованным —
+    /// повару для заполнения КБЖУ блюда.
+    private func searchNutrition(_ req: Request) async throws -> [NutritionProductDTO] {
+        _ = try await getUser(req)
+        guard let query = req.query[String.self, at: "q"] else { return [] }
+        return try await NutritionService.search(query: query, client: app.client, logger: req.logger)
+    }
+
+    /// Подсказки адреса через Nominatim.
+    private func searchAddress(_ req: Request) async throws -> [GeoPlaceDTO] {
+        _ = try await getUser(req)
+        guard let query = req.query[String.self, at: "q"] else { return [] }
+        return try await GeoService.search(query: query, client: app.client, logger: req.logger)
+    }
+
+    /// Расстояние по дорогам между двумя точками (OSRM).
+    private func routeInfo(_ req: Request) async throws -> RouteDTO {
+        _ = try await getUser(req)
+        guard let fromLat = req.query[Double.self, at: "fromLat"],
+              let fromLon = req.query[Double.self, at: "fromLon"],
+              let toLat = req.query[Double.self, at: "toLat"],
+              let toLon = req.query[Double.self, at: "toLon"],
+              (-90...90).contains(fromLat), (-90...90).contains(toLat),
+              (-180...180).contains(fromLon), (-180...180).contains(toLon) else {
+            throw Abort(.badRequest, reason: "Некорректные координаты")
+        }
+        guard let route = try await GeoService.route(
+            fromLat: fromLat, fromLon: fromLon,
+            toLat: toLat, toLon: toLon,
+            client: app.client, logger: req.logger
+        ) else {
+            throw Abort(.badGateway, reason: "Не удалось построить маршрут")
+        }
+        return route
+    }
+
+    /// Маршрут «повар → адрес доставки» по дорогам. Доступен и клиенту, и повару.
+    private func orderRoute(_ req: Request) async throws -> RouteDTO {
+        let (user, _) = try await getUser(req)
+        guard let userID = user.id,
+              let orderID = req.parameters.get("id", as: UUID.self),
+              let order = try await Order.find(orderID, on: req.db) else {
+            throw Abort(.notFound, reason: "Заказ не найден")
+        }
+        // Заказ виден только его клиенту и его повару.
+        guard order.$client.id == userID || order.$cook.id == userID else {
+            throw Abort(.forbidden, reason: "Нет доступа к заказу")
+        }
+        guard order.isDelivery == true,
+              let toLat = order.deliveryLat, let toLon = order.deliveryLon else {
+            throw Abort(.badRequest, reason: "У заказа нет координат доставки")
+        }
+        guard let cook = try await User.find(order.$cook.id, on: req.db),
+              let fromLat = cook.latitude, let fromLon = cook.longitude else {
+            throw Abort(.badRequest, reason: "У повара не указан адрес")
+        }
+        guard let route = try await GeoService.route(
+            fromLat: fromLat, fromLon: fromLon,
+            toLat: toLat, toLon: toLon,
+            client: app.client, logger: req.logger
+        ) else {
+            throw Abort(.badGateway, reason: "Не удалось построить маршрут")
+        }
+        return route
+    }
+
     // MARK: - Cook tools (dishes)
 
     private func getMyDishes(_ req: Request) async throws -> [DishDTO] {
@@ -1140,6 +1283,19 @@ struct MiniAppController {
         }
         if let isToday = dto.isToday {
             dish.cookedDate = isToday ? formatDate(Date()) : nil
+        }
+        // КБЖУ перезаписываем только если поле пришло в запросе.
+        if dto.caloriesPer100g != nil || dto.proteinPer100g != nil
+            || dto.fatPer100g != nil || dto.carbsPer100g != nil
+            || dto.portionWeightG != nil {
+            applyNutrition(
+                to: dish,
+                calories: dto.caloriesPer100g ?? dish.caloriesPer100g,
+                protein: dto.proteinPer100g ?? dish.proteinPer100g,
+                fat: dto.fatPer100g ?? dish.fatPer100g,
+                carbs: dto.carbsPer100g ?? dish.carbsPer100g,
+                portionWeight: dto.portionWeightG ?? dish.portionWeightG
+            )
         }
         try await dish.save(on: req.db)
         return try await enrichDish(dish, req: req)
@@ -1341,10 +1497,11 @@ struct MiniAppController {
             )
         }
 
+        let cook = try await User.find(order.$cook.id, on: req.db)
         return OrderDTO(
             id: order.id?.uuidString ?? "",
             dish: nil,
-            cook: CookSummaryDTO(id: order.$cook.id.uuidString, name: "Повар", rating: nil, reviewCount: 0, distance: nil),
+            cook: CookSummaryDTO(id: cook?.id?.uuidString ?? order.$cook.id.uuidString, name: cook?.firstName ?? "Повар", rating: nil, reviewCount: 0, distance: nil),
             client: nil,
             quantity: order.quantity,
             totalPrice: order.totalPrice,
@@ -1353,7 +1510,10 @@ struct MiniAppController {
             createdAt: order.createdAt.map { ISO8601DateFormatter().string(from: $0) },
             items: [],
             isDelivery: order.isDelivery,
-            address: nil
+            address: nil,
+            deliveryLat: order.deliveryLat,
+            deliveryLon: order.deliveryLon,
+            distanceKm: deliveryDistance(order: order, cook: cook)
         )
     }
 
@@ -1403,6 +1563,7 @@ struct MiniAppController {
         let orders = try await Order.query(on: req.db)
             .filter(\.$cook.$id == userID)
             .with(\.$client)
+            .with(\.$cook)
             .with(\.$dish)
             .with(\.$items)
             .sort(\.$createdAt, .descending)
@@ -1424,7 +1585,8 @@ struct MiniAppController {
                         portionsTotal: d.portionsTotal,
                         cook: CookSummaryDTO(id: order.cook.id?.uuidString ?? "", name: order.cook.firstName, rating: nil, reviewCount: 0, distance: nil),
                         isFavorite: false,
-                        createdAt: nil
+                        createdAt: nil,
+                        nutrition: NutritionDTO.from(d)
                     )
                 },
                 cook: CookSummaryDTO(id: order.cook.id?.uuidString ?? "", name: order.cook.firstName, rating: nil, reviewCount: 0, distance: nil),
@@ -1441,7 +1603,10 @@ struct MiniAppController {
                 createdAt: order.createdAt.map { ISO8601DateFormatter().string(from: $0) },
                 items: order.items.map { OrderItemDTO(dishId: $0.$dish.id.uuidString, title: $0.dishTitle, price: $0.price, quantity: $0.quantity) },
                 isDelivery: order.isDelivery,
-                address: order.isDelivery == true ? (order.shippingAddress ?? order.client.address) : nil
+                address: order.isDelivery == true ? (order.shippingAddress ?? order.client.address) : nil,
+                deliveryLat: order.deliveryLat,
+                deliveryLon: order.deliveryLon,
+                distanceKm: deliveryDistance(order: order, cook: order.cook)
             )
         }
     }
@@ -1507,7 +1672,10 @@ struct MiniAppController {
             createdAt: order.createdAt.map { ISO8601DateFormatter().string(from: $0) },
             items: [],
             isDelivery: order.isDelivery,
-            address: nil
+            address: nil,
+            deliveryLat: order.deliveryLat,
+            deliveryLon: order.deliveryLon,
+            distanceKm: deliveryDistance(order: order, cook: cook)
         )
     }
 
@@ -1809,6 +1977,45 @@ struct DishDTO: Content {
     let cook: CookSummaryDTO
     let isFavorite: Bool
     let createdAt: String?
+    let nutrition: NutritionDTO?
+}
+
+/// КБЖУ блюда: на 100 г и на порцию (если указан вес порции).
+struct NutritionDTO: Content {
+    let kcalPer100g: Double?
+    let proteinPer100g: Double?
+    let fatPer100g: Double?
+    let carbsPer100g: Double?
+    let portionWeightG: Int?
+    let kcalPerPortion: Double?
+    let proteinPerPortion: Double?
+    let fatPerPortion: Double?
+    let carbsPerPortion: Double?
+
+    /// Собирает DTO из полей блюда. Возвращает nil, если КБЖУ не заполнено.
+    static func from(_ dish: Dish) -> NutritionDTO? {
+        let hasAny = dish.caloriesPer100g != nil || dish.proteinPer100g != nil
+            || dish.fatPer100g != nil || dish.carbsPer100g != nil
+        guard hasAny else { return nil }
+
+        let weight = dish.portionWeightG.flatMap { $0 > 0 ? Double($0) : nil }
+        func perPortion(_ per100: Double?) -> Double? {
+            guard let per100, let weight else { return nil }
+            return ((per100 * weight / 100) * 10).rounded() / 10
+        }
+
+        return NutritionDTO(
+            kcalPer100g: dish.caloriesPer100g,
+            proteinPer100g: dish.proteinPer100g,
+            fatPer100g: dish.fatPer100g,
+            carbsPer100g: dish.carbsPer100g,
+            portionWeightG: dish.portionWeightG,
+            kcalPerPortion: perPortion(dish.caloriesPer100g),
+            proteinPerPortion: perPortion(dish.proteinPer100g),
+            fatPerPortion: perPortion(dish.fatPer100g),
+            carbsPerPortion: perPortion(dish.carbsPer100g)
+        )
+    }
 }
 
 struct CookSummaryDTO: Content {
@@ -1887,6 +2094,10 @@ struct OrderDTO: Content {
     let items: [OrderItemDTO]
     let isDelivery: Bool?
     let address: String?
+    let deliveryLat: Double?
+    let deliveryLon: Double?
+    /// Расстояние по прямой от повара до адреса доставки (км).
+    let distanceKm: Double?
 }
 
 struct ClientSummaryDTO: Content {
@@ -1910,6 +2121,11 @@ struct UpdateDishInput: Content {
     let category: String?
     let portionsTotal: Int?
     let isToday: Bool?
+    let caloriesPer100g: Double?
+    let proteinPer100g: Double?
+    let fatPer100g: Double?
+    let carbsPer100g: Double?
+    let portionWeightG: Int?
 }
 
 struct MarkTodayInput: Content {
@@ -1995,6 +2211,11 @@ struct CreateDishDTO: Content {
     let portionsTotal: Int?
     let photoFileId: String?
     let isToday: Bool?
+    let caloriesPer100g: Double?
+    let proteinPer100g: Double?
+    let fatPer100g: Double?
+    let carbsPer100g: Double?
+    let portionWeightG: Int?
 }
 
 struct AddToCartDTO: Content {
@@ -2012,6 +2233,9 @@ struct CreateOrderDTO: Content {
     let isDelivery: Bool?
     let phone: String?
     let address: String?
+    /// Координаты выбранного адреса (если клиент выбрал подсказку).
+    let addressLat: Double?
+    let addressLon: Double?
 }
 
 struct OrderItemInput: Content {

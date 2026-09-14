@@ -65,6 +65,13 @@ final class Order: Model, Content, @unchecked Sendable {
     @OptionalField(key: "shipping_address")
     var shippingAddress: String?
 
+    /// Координаты адреса доставки — чтобы считать маршрут от повара по дорогам.
+    @OptionalField(key: "delivery_lat")
+    var deliveryLat: Double?
+
+    @OptionalField(key: "delivery_lon")
+    var deliveryLon: Double?
+
     @OptionalField(key: "reschedule_to")
     var rescheduleTo: String?
 

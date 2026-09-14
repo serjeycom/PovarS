@@ -9,7 +9,7 @@
     <link rel="icon" type="image/png" href="/app/icon-192.png">
     <link rel="apple-touch-icon" href="/app/icon-192.png">
     <link rel="manifest" href="/manifest.json">
-    <link rel="stylesheet" href="/app/povar.css?v=5">
+    <link rel="stylesheet" href="/app/povar.css?v=6">
     <script>
       // Telegram SDK грузим асинхронно и без блокировки страницы:
       // если telegram.org недоступен (например, заблокирован у провайдера),
@@ -43,7 +43,7 @@
                     </div>
                 </div>
                 <div class="topbar-right">
-                    <span id="uiDebug" style="color:var(--brand-primary);font-weight:700;font-size:12px;white-space:nowrap;align-self:center">v29</span>
+                    <span id="uiDebug" style="color:var(--brand-primary);font-weight:700;font-size:12px;white-space:nowrap;align-self:center">v30</span>
                     <button class="topbar-action" id="createTopBtn"><span class="topbar-action-icon">＋</span> Добавить блюдо</button>
                     <button class="icon-btn" id="profileBtn" aria-label="Профиль">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
@@ -205,7 +205,7 @@
                 </div>
 
                 <footer class="site-footer">
-                    <div>© 2025 Повар • Домашняя еда рядом • <b id="uiVersion">v29</b></div>
+                    <div>© 2025 Повар • Домашняя еда рядом • <b id="uiVersion">v30</b></div>
                 </footer>
             </main>
         </div>
@@ -232,12 +232,12 @@
         </div>
     </div>
     <div class="toast-container" id="toastContainer"></div>
-    <script type="module" src="/app/app.js?v=13"></script>
+    <script type="module" src="/app/app.js?v=14"></script>
     <script>
       // Отладочный индикатор: версия и ширина окна (убрать после отладки вёрстки)
       (function () {
         var dbg = document.getElementById('uiDebug');
-        function upd() { if (dbg) dbg.textContent = 'v29 • ' + window.innerWidth + 'px'; }
+        function upd() { if (dbg) dbg.textContent = 'v30 • ' + window.innerWidth + 'px'; }
         upd();
         window.addEventListener('resize', upd);
       })();

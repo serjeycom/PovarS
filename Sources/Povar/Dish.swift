@@ -40,6 +40,23 @@ final class Dish: Model, Content, @unchecked Sendable {
     @OptionalField(key: "dish_type")
     var dishType: String?
 
+    // КБЖУ на 100 г (заполняется поваром вручную или через поиск продуктов)
+    @OptionalField(key: "calories_per_100g")
+    var caloriesPer100g: Double?
+
+    @OptionalField(key: "protein_per_100g")
+    var proteinPer100g: Double?
+
+    @OptionalField(key: "fat_per_100g")
+    var fatPer100g: Double?
+
+    @OptionalField(key: "carbs_per_100g")
+    var carbsPer100g: Double?
+
+    /// Вес одной порции в граммах — чтобы считать КБЖУ на порцию.
+    @OptionalField(key: "portion_weight_g")
+    var portionWeightG: Int?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 

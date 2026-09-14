@@ -74,4 +74,6 @@ func registerMigrations(_ app: Application) throws {
     app.migrations.add(AddDishPhotoPath())
     app.migrations.add(AddUserTimezone())
     app.migrations.add(AddProfilePhotoPath())
+    app.migrations.add(AddDishNutrition())
+    app.migrations.add(AddOrderDeliveryCoords())
 }

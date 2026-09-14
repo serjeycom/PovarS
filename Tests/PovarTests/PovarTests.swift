@@ -101,6 +101,48 @@ import XCTVapor
     #expect(photoURL(path: "", fileID: nil) == nil)
 }
 
+// MARK: - Unit: КБЖУ блюда
+
+@Test func nutritionEmptyWhenNoData() {
+    let dish = Dish(cookID: UUID(), title: "Борщ", details: nil, price: 280)
+    #expect(NutritionDTO.from(dish) == nil)
+}
+
+@Test func nutritionPerPortionMath() {
+    let dish = Dish(cookID: UUID(), title: "Борщ", details: nil, price: 280)
+    dish.caloriesPer100g = 325
+    dish.proteinPer100g = 7
+    dish.fatPer100g = 9.5
+    dish.carbsPer100g = 53
+    dish.portionWeightG = 350
+
+    let n = NutritionDTO.from(dish)
+    #expect(n != nil)
+    // 325 ккал * 350 г / 100 = 1137.5
+    #expect(n?.kcalPerPortion == 1137.5)
+    #expect(n?.proteinPerPortion == 24.5)
+    #expect(n?.fatPerPortion == 33.3)
+    #expect(n?.carbsPerPortion == 185.5)
+    #expect(n?.portionWeightG == 350)
+}
+
+@Test func nutritionWithoutPortionWeight() {
+    let dish = Dish(cookID: UUID(), title: "Суп", details: nil, price: 200)
+    dish.caloriesPer100g = 60
+    // Вес порции не указан — на порцию ничего не считаем.
+    let n = NutritionDTO.from(dish)
+    #expect(n?.kcalPer100g == 60)
+    #expect(n?.kcalPerPortion == nil)
+}
+
+@Test func nutritionIgnoresZeroPortionWeight() {
+    let dish = Dish(cookID: UUID(), title: "Суп", details: nil, price: 200)
+    dish.caloriesPer100g = 60
+    dish.portionWeightG = 0
+    let n = NutritionDTO.from(dish)
+    #expect(n?.kcalPerPortion == nil)
+}
+
 // MARK: - Unit: часовые пояса и тихие часы
 
 @Test func localHourCalculation() {
