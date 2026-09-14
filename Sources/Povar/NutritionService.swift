@@ -37,6 +37,22 @@ enum NutritionService {
         }
     }
 
+    /// Open Food Facts просит не чаще одного поискового запроса в секунду.
+    /// Без этого сервер получает 503 и поиск «ломается» через раз.
+    private actor Gate {
+        static let shared = Gate()
+        private var lastRequest: Date = .distantPast
+        private let minInterval: TimeInterval = 1.2
+
+        func waitForSlot() async {
+            let elapsed = Date().timeIntervalSince(lastRequest)
+            if elapsed < minInterval {
+                try? await Task.sleep(nanoseconds: UInt64((minInterval - elapsed) * 1_000_000_000))
+            }
+            lastRequest = Date()
+        }
+    }
+
     private static let userAgent = "Povar/1.0 (https://povar.serjey.com; contact@serjey.com)"
 
     /// Ищет продукты по названию. Возвращает только те, у которых есть хоть какие-то КБЖУ.
@@ -49,9 +65,55 @@ enum NutritionService {
             return cached
         }
 
-        var components = URLComponents(string: "https://world.openfoodfacts.org/cgi/search.pl")!
+        // let, а не var: замыкание ниже выполняется параллельно и требует Sendable.
+        // Ключи — обычные строки: HTTPHeaders принимает словарь [String: String].
+        let headers: HTTPHeaders = [
+            "User-Agent": userAgent,
+            "Accept": "application/json",
+        ]
+
+        // ru.* отдаёт русские продукты и отвечает за доли секунды, а world.*
+        // с российского сервера часто возвращает 503. Поэтому сначала ru,
+        // потом world, и всё это дважды: OFF периодически режет по лимитам.
+        let hosts = ["https://ru.openfoodfacts.org", "https://world.openfoodfacts.org"]
+        var items: [NutritionProductDTO] = []
+        for attempt in 0..<2 {
+            for host in hosts {
+                await Gate.shared.waitForSlot()
+                do {
+                    items = try await searchProducts(
+                        query: trimmed, host: host, client: client, headers: headers, logger: logger
+                    )
+                } catch {
+                    logger.warning("nutrition: decode error from \(host) for \(trimmed): \(error)")
+                    items = []
+                }
+                if !items.isEmpty { break }
+            }
+            if !items.isEmpty { break }
+            // Перед повтором даём лимитеру OFF остыть.
+            if attempt == 0 { try? await Task.sleep(nanoseconds: 800_000_000) }
+        }
+
+        // Пустой ответ не кэшируем: он может быть следствием временной
+        // недоступности внешнего API, а TTL у кэша — 6 часов.
+        if !items.isEmpty {
+            await Cache.shared.set(key, items)
+        }
+        return items
+    }
+
+    /// Один запрос к конкретному хосту Open Food Facts.
+    private static func searchProducts(
+        query: String,
+        host: String,
+        client: Client,
+        headers: HTTPHeaders,
+        logger: Logger
+    ) async throws -> [NutritionProductDTO] {
+        var components = URLComponents(string: "\(host)/cgi/search.pl")!
         components.queryItems = [
-            .init(name: "search_terms", value: trimmed),
+            .init(name: "search_terms", value: query),
             .init(name: "search_simple", value: "1"),
             .init(name: "action", value: "process"),
             .init(name: "json", value: "1"),
@@ -60,24 +122,27 @@ enum NutritionService {
         ]
         guard let urlString = components.url?.absoluteString else { return [] }
 
-        // let, а не var: замыкание ниже выполняется параллельно и требует Sendable.
-        // Ключи — обычные строки: HTTPHeaders принимает словарь [String: String].
-        let headers: HTTPHeaders = [
-            "User-Agent": userAgent,
-            "Accept": "application/json",
-        ]
-
-        // У внешнего API нет гарантий по скорости — обрываем на 8 секундах.
-        let response = try await withTimeout(seconds: 8) {
-            try await client.get(URI(string: urlString), headers: headers)
+        // С российского сервера ответ иногда идёт 10+ секунд — даём запас.
+        let response: ClientResponse?
+        do {
+            response = try await withTimeout(seconds: 20) {
+                try await client.get(URI(string: urlString), headers: headers)
+            }
+        } catch {
+            logger.warning("nutrition: error from \(host) for \(query): \(String(reflecting: error))")
+            return []
         }
-        guard let response, response.status == .ok, let body = response.body else {
-            logger.warning("nutrition: no response for \(key)")
+        guard let response else {
+            logger.warning("nutrition: timeout from \(host) for \(query)")
+            return []
+        }
+        guard response.status == .ok, let body = response.body else {
+            logger.warning("nutrition: status \(response.status.code) from \(host) for \(query)")
             return []
         }
 
         let decoded = try JSONDecoder().decode(OFFSearchResponse.self, from: Data(buffer: body))
-        let items = decoded.products.compactMap { product -> NutritionProductDTO? in
+        return decoded.products.compactMap { product -> NutritionProductDTO? in
             let name = (product.productName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return nil }
             let n = product.nutriments
@@ -97,9 +162,6 @@ enum NutritionService {
                 carbsPer100g: carbs.map { ($0 * 10).rounded() / 10 }
             )
         }
-
-        await Cache.shared.set(key, items)
-        return items
     }
 }
 
